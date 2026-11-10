@@ -5,7 +5,7 @@ Public routes (through the tunnel), one secret token per project:
 The dashboard and /api/* answer only on this computer.
 The server opens its own ngrok tunnel unless --public-url names an address that already reaches it.
 Usage: python server.py --model /path/to/model [--port 8790] [--public-url https://...]"""
-import argparse, atexit, json, os, queue, re, secrets, shutil, subprocess, threading, time, traceback, urllib.request
+import argparse, atexit, json, os, queue, re, secrets, shutil, signal, subprocess, sys, threading, time, traceback, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import brain
 from brain import BenchError
@@ -197,6 +197,7 @@ def admin(path, b):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(); ap.add_argument("--model", required=True); ap.add_argument("--port", type=int, default=8790); ap.add_argument("--public-url"); ARGS = ap.parse_args()
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     c = config(); c["public_url"] = (ARGS.public_url or open_tunnel(ARGS.port)).rstrip("/"); brain.save("config.json", c)
     brain.start(ARGS.model)
     threading.Thread(target=worker, daemon=True).start()
