@@ -1,2 +1,5 @@
 __pycache__/
 exports/
+data/
+models/
+.env

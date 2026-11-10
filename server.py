@@ -4,14 +4,15 @@ Public routes (through the tunnel), one secret token per project:
   POST /p/<token>/webhook               Vapi server messages; forwarded to the project's own webhook at once
 The dashboard and /api/* answer only on this computer.
 The server opens its own ngrok tunnel unless --public-url names an address that already reaches it.
-Usage: python server.py --model /path/to/model [--port 8790] [--public-url https://...]"""
+Usage: python server.py --config config.json"""
 import argparse, atexit, json, os, queue, re, secrets, shutil, signal, subprocess, sys, threading, time, traceback, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import brain
 from brain import BenchError
 
 HERE = os.path.dirname(os.path.abspath(__file__)); ARGS = None; JOBS = queue.Queue(); TURNS = {}; SEEN = set()
-def config(): return brain.load("config.json", dict(public_url="", daily_edit_cap=10))
+CONFIG = {}
+def config(): return brain.load("settings.json", dict(public_url="", daily_edit_cap=10))
 def projects(): return brain.load("projects.json", [])
 def calls(): return brain.load("calls.json", [])
 def project_by_token(token): return next((p for p in projects() if secrets.compare_digest(p["token"], token)), None)
@@ -34,7 +35,8 @@ def open_tunnel(port, tries=8):
 def _open_tunnel(port):
     exe = shutil.which("ngrok") or "/opt/homebrew/bin/ngrok"
     if not os.path.exists(exe): raise SystemExit("ngrok is not installed. Install it, or pass --public-url.")
-    proc = subprocess.Popen([exe, "http", f"127.0.0.1:{port}", "--log=stdout", "--log-format=json", "--inspect=false"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    domain = CONFIG.get("ngrok_domain")
+    proc = subprocess.Popen([exe, "http", f"127.0.0.1:{port}", "--log=stdout", "--log-format=json", "--inspect=false"] + ([f"--url=https://{domain}"] if domain else []), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     atexit.register(proc.terminate); deadline = time.time() + 30
     for line in proc.stdout:
         try: rec = json.loads(line)
@@ -95,7 +97,7 @@ class H(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     def log_message(self, *a): pass
     def local(self):
-        return self.client_address[0] == "127.0.0.1" and "X-Forwarded-For" not in self.headers and (self.headers.get("Host") or "").split(":")[0] in ("127.0.0.1", "localhost")
+        return "X-Forwarded-For" not in self.headers and (self.headers.get("Host") or "").split(":")[0] in ("127.0.0.1", "localhost")
     def send(self, code, body, ctype="application/json"):
         data = body if isinstance(body, bytes) else json.dumps(body).encode()
         self.send_response(code); self.send_header("Content-Type", ctype); self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
@@ -194,7 +196,7 @@ def admin(path, b):
         if path == "/api/config":
             c = config()
             if "daily_edit_cap" in b: c["daily_edit_cap"] = max(0, int(b["daily_edit_cap"]))
-            brain.save("config.json", c); return c
+            brain.save("settings.json", c); return c
     m = re.fullmatch(r"/api/versions/(\d+)/activate", path)
     if m: brain.activate(int(m.group(1))); return dict(ok=True)
     if path == "/api/try":
@@ -203,10 +205,12 @@ def admin(path, b):
     raise BenchError("Unknown route.")
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(); ap.add_argument("--model", required=True); ap.add_argument("--port", type=int, default=8790); ap.add_argument("--public-url"); ARGS = ap.parse_args()
+    ap = argparse.ArgumentParser(); ap.add_argument("--config", default=os.path.join(HERE, "config.json")); ARGS = ap.parse_args()
+    CONFIG.update(json.load(open(ARGS.config))); port = int(CONFIG.get("port", 8790)); host = os.environ.get("VENGRAM_HOST") or CONFIG.get("host", "127.0.0.1")
+    if not CONFIG.get("model"): raise SystemExit(f"Set model in {ARGS.config}.")
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    c = config(); c["public_url"] = (ARGS.public_url or open_tunnel(ARGS.port)).rstrip("/"); brain.save("config.json", c)
-    brain.start(ARGS.model)
+    c = config(); c["public_url"] = (CONFIG.get("public_url") or open_tunnel(port)).rstrip("/"); brain.save("settings.json", c)
+    brain.start(CONFIG["model"], CONFIG.get("judge_model"))
     threading.Thread(target=worker, daemon=True).start()
-    print(f"Vengram: dashboard http://127.0.0.1:{ARGS.port}  public {config()['public_url']}  model {brain.LIVE.e.name}  version {brain.LIVE.version}", flush=True)
-    ThreadingHTTPServer(("127.0.0.1", ARGS.port), H).serve_forever()
+    print(f"Vengram: dashboard http://127.0.0.1:{port}  public {config()['public_url']}  model {brain.LIVE.e.name}  version {brain.LIVE.version}", flush=True)
+    ThreadingHTTPServer((host, port), H).serve_forever()

@@ -1,0 +1,11 @@
+services:
+  vengram:
+    build: .
+    ports:
+      - "127.0.0.1:8790:8790"
+    volumes:
+      - ./config.json:/app/config.json:ro
+      - ./data:/data
+      - ./models:/models:ro
+    env_file: .env
+    restart: unless-stopped

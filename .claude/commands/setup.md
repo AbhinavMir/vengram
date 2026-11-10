@@ -1,0 +1,9 @@
+Set up Vengram on this computer with Docker, then connect one Vapi assistant. Do each step in order and report the result of each one.
+
+1. Make sure that Docker is installed and running (`docker info`). If it is not, tell the user to install or start Docker Desktop, and stop.
+2. If `.env` does not exist, copy `.env.example` to `.env`. Ask the user for an Anthropic API key and an ngrok authtoken, and write them into `.env`. Do not print the keys back.
+3. Ask the user which model to serve. Accept a Hugging Face model id, or a local folder. For a local folder, copy or link it under `./models/` and write `/models/<folder>` as the model in `config.json`. Tell the user that the server holds two copies of the model, and that Docker needs about 5.5 GB for a 0.5B model and about 14 GB for a 1.5B model.
+4. Run `docker compose up --build -d`, then read `docker compose logs` until the line that starts with `Vengram:` appears. Report the public address from that line.
+5. Open http://127.0.0.1:8790 for the user. Create a project with `curl -X POST -H 'Content-Type: application/json' -d '{"name":"<name>"}' http://127.0.0.1:8790/api/projects`, and show the `llm_url` and `webhook_url` from the reply.
+6. Tell the user to open their assistant in Vapi, choose Custom LLM under Model with the `llm_url`, set the Server URL to the `webhook_url`, and turn on the End Of Call Report message. If the user gives a Vapi private key and an assistant id instead, make that change with a PATCH to `https://api.vapi.ai/assistant/<id>`, with `model.provider` set to `custom-llm`, `model.url` set to the `llm_url`, `server.url` set to the `webhook_url`, and `serverMessages` set to `["end-of-call-report"]`.
+7. Tell the user to make a test call. The call appears under Calls in the dashboard with its grade, and any model update appears under Model.

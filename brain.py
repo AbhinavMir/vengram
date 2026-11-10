@@ -2,18 +2,24 @@
 Two copies of the model are loaded: LIVE answers calls, STAGING is where the editor tests edits.
 An accepted edit becomes a new version, and the live weights are replaced with it in one locked step."""
 import json, os, secrets, threading, time
-HOME = os.path.join(os.path.expanduser("~"), ".engram"); DATA = os.path.join(HOME, "live"); VERSIONS = os.path.join(DATA, "versions")
-os.makedirs(VERSIONS, mode=0o700, exist_ok=True); os.chmod(DATA, 0o700); os.environ["ENGRAM_EXPORTS"] = VERSIONS
-import anthropic, torch
+HOME = os.path.join(os.path.expanduser("~"), ".engram"); DATA = os.environ.get("VENGRAM_DATA") or os.path.join(HOME, "live")
+os.makedirs(DATA, mode=0o700, exist_ok=True); os.chmod(DATA, 0o700); VERSIONS = None
+import anthropic, re, torch
+import engine
 from transformers import StoppingCriteria, StoppingCriteriaList, TextIteratorStreamer
 from engine import Engine, BenchError
 
-JUDGE_MODEL = "claude-opus-5-5"; MIN_AGREEMENT = 0.95; MAX_REGRESSION = 6; EDITOR_ROUNDS = 30
+JUDGE_MODEL = "claude-opus-5-5"; MODEL_KEY = ""; MIN_AGREEMENT = 0.95; MAX_REGRESSION = 6; EDITOR_ROUNDS = 30
 SANITY = ["What is 12 plus 30?", "Name the largest ocean.", "What color is the sky on a clear day?", "Say hello in one short sentence."]
-CLAUDE = anthropic.Anthropic(api_key=json.load(open(os.path.join(HOME, "credentials.json")))["anthropic"], timeout=300)
+def _anthropic_key():
+    if os.environ.get("ANTHROPIC_API_KEY"): return os.environ["ANTHROPIC_API_KEY"]
+    p = os.path.join(HOME, "credentials.json")
+    if os.path.exists(p) and json.load(open(p)).get("anthropic"): return json.load(open(p))["anthropic"]
+    raise SystemExit("Set ANTHROPIC_API_KEY, or put {\"anthropic\": \"...\"} in ~/.engram/credentials.json.")
+CLAUDE = anthropic.Anthropic(api_key=_anthropic_key(), timeout=300)
 
 # ---------- small private store ----------
-def path(name): return os.path.join(DATA, name)
+def path(name): return os.path.join(VERSIONS if name == "versions.json" else DATA, name)
 def load(name, default):
     p = path(name)
     return json.load(open(p)) if os.path.exists(p) else default
@@ -35,9 +41,18 @@ class Copy:
         if n: s.e.import_delta(os.path.join(VERSIONS, f"v{n}.safetensors"))
         s.version = n
 LIVE = STAGING = None
-def start(model_dir):
-    global LIVE, STAGING
-    LIVE, STAGING = Copy(model_dir), Copy(model_dir)
+def resolve(model):
+    """A local folder is used as it is. Any other value is a Hugging Face model id, downloaded once into the data folder."""
+    if os.path.isdir(model): return model
+    from huggingface_hub import snapshot_download
+    return snapshot_download(model, cache_dir=os.path.join(DATA, "hf"))
+def start(model, judge_model=None):
+    """Load two copies of the model. Versions are kept per base model, so a new model in the config starts at its own version 0."""
+    global LIVE, STAGING, VERSIONS, MODEL_KEY, JUDGE_MODEL
+    if judge_model: JUDGE_MODEL = judge_model
+    MODEL_KEY = re.sub(r"[^A-Za-z0-9_.-]+", "_", model.strip("/")).strip("_")[-80:]
+    VERSIONS = os.path.join(DATA, "models", MODEL_KEY); os.makedirs(VERSIONS, mode=0o700, exist_ok=True); engine.EXPORT_DIR = VERSIONS
+    folder = resolve(model); LIVE, STAGING = Copy(folder), Copy(folder)
     n = load("versions.json", dict(active=0, versions=[]))["active"]
     with LIVE.lock: LIVE.set_version(n)
 

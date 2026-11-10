@@ -2,3 +2,4 @@ torch
 transformers
 safetensors
 anthropic
+huggingface_hub

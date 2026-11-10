@@ -1,0 +1,7 @@
+{
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "judge_model": "claude-opus-5-5",
+  "port": 8790,
+  "public_url": "",
+  "ngrok_domain": ""
+}
