@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Vengram</title><link rel="icon" href="/logo.png">
+<style>
+:root{--ink:#16211b;--muted:#5a6a60;--line:#dfe8e2;--soft:#f4f8f5;--green:#1f6f4a;--bad:#a4261c;--sans:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;--mono:"SF Mono",Menlo,monospace}
+*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:#fff;color:var(--ink);font:14px/1.5 var(--sans)}
+header{display:flex;align-items:center;gap:22px;padding:14px 28px;border-bottom:1px solid var(--line)}h1{display:flex;align-items:center;gap:8px;font-size:20px;margin:0}h1 img{width:28px}
+nav{display:flex;gap:4px}nav button{border:0;background:none;border-radius:999px;padding:5px 14px;color:var(--muted);font:14px var(--sans);cursor:pointer}nav button[aria-selected=true]{background:#e4f0e8;color:var(--ink)}
+#meta{margin-left:auto;color:var(--muted);font-size:13px}
+main{max-width:1060px;margin:0 auto;padding:24px 28px}h2{font-size:16px;margin:0 0 12px}
+input,textarea{width:100%;border:1px solid var(--line);border-radius:7px;padding:7px 9px;font:13px var(--sans)}textarea{min-height:70px;font-family:var(--sans)}
+button.b{border:1px solid #bfd0c5;background:#fff;border-radius:7px;padding:6px 12px;font:13px var(--sans);cursor:pointer}button.go{background:var(--green);border-color:var(--green);color:#fff}
+.card{border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:14px}
+.row{display:flex;gap:8px;align-items:center}.row>input{flex:1}.grid{display:grid;grid-template-columns:150px 1fr auto;gap:8px 12px;align-items:center;margin-top:10px}
+.url{font:12px var(--mono);background:var(--soft);border-radius:6px;padding:6px 8px;overflow-wrap:anywhere}
+.muted{color:var(--muted)}.small{font-size:12px}ol{padding-left:18px;margin:8px 0 0}li{margin:3px 0}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}th{font-weight:500;color:var(--muted);font-size:12px}
+tr.call{cursor:pointer}tr.call:hover{background:var(--soft)}.pill{display:inline-block;border-radius:999px;padding:1px 9px;font-size:12px;background:var(--soft)}.ok{background:#e4f0e8;color:var(--green)}.no{background:#fbe9e7;color:var(--bad)}
+pre{white-space:pre-wrap;font:12px/1.45 var(--mono);background:var(--soft);border-radius:8px;padding:10px;margin:6px 0;max-height:320px;overflow:auto}
+.toast{position:fixed;right:18px;bottom:18px;background:#fff;border:1px solid var(--line);border-left:3px solid var(--bad);border-radius:8px;padding:10px 12px;box-shadow:0 6px 20px rgba(0,0,0,.12)}
+label.sw{display:inline-flex;gap:6px;align-items:center;margin-right:16px}label.sw input{width:auto;accent-color:var(--green)}
+</style></head><body>
+<header><h1><img src="/logo.png" alt="">Vengram</h1><nav id="tabs"><button data-t="projects" aria-selected="true">Projects</button><button data-t="calls">Calls</button><button data-t="model">Model</button></nav><span id="meta"></span></header>
+<main>
+<section data-p="projects">
+ <div class="card"><h2>New project</h2><div class="row"><input id="pname" placeholder="Name, for example Westbrook Dermatology"><input id="pfwd" placeholder="Your own webhook URL (optional)"><button class="b go" id="pcreate">Create</button></div></div>
+ <div id="plist"></div>
+</section>
+<section data-p="calls" hidden><div class="card"><h2>Calls</h2><table><thead><tr><th>Time</th><th>Project</th><th>Status</th><th>Score</th><th>Model update</th></tr></thead><tbody id="clist"></tbody></table><p id="cempty" class="muted">No calls yet.</p></div></section>
+<section data-p="model" hidden>
+ <div class="card"><h2>Live model</h2><p id="minfo"></p><div class="row" style="max-width:420px"><span>Model updates per day</span><input id="cap" type="number" min="0" style="width:90px;flex:none"><button class="b" id="capsave">Save</button></div></div>
+ <div class="card"><h2>Versions</h2><table><thead><tr><th>Version</th><th>Created</th><th>Reason</th><th>Regression</th><th></th></tr></thead><tbody id="vlist"></tbody></table></div>
+ <div class="card"><h2>Try the live model</h2><textarea id="trysys" placeholder="System prompt (optional)"></textarea><div class="row" style="margin-top:8px"><input id="trymsg" placeholder="What the caller says"><button class="b go" id="trygo">Send</button></div><pre id="tryout" hidden></pre></div>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id),esc=t=>String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));let S=null,open=new Set();
+function toast(m){const d=document.createElement('div');d.className='toast';d.textContent=m;document.body.append(d);setTimeout(()=>d.remove(),6000)}
+async function api(p,b){const r=await fetch(p,b===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});const j=await r.json();if(!r.ok)throw new Error(j.error);return j}
+const run=f=>async()=>{try{await f();await load()}catch(e){toast(e.message)}};
+document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#tabs button').forEach(x=>x.setAttribute('aria-selected',x===b));document.querySelectorAll('[data-p]').forEach(s=>s.hidden=s.dataset.p!==b.dataset.t)});
+const copy=(t)=>`<button class="b small" onclick="navigator.clipboard.writeText('${esc(t)}')">Copy</button>`;
+function renderProjects(){$('plist').innerHTML=S.projects.map(p=>`<div class="card"><div class="row"><h2 style="margin:0;flex:1">${esc(p.name)}</h2><label class="sw"><input type="checkbox" ${p.judge?'checked':''} onchange="setp('${p.id}',{judge:this.checked})">Judge calls</label><label class="sw"><input type="checkbox" ${p.auto_improve?'checked':''} onchange="setp('${p.id}',{auto_improve:this.checked})">Update the model</label><button class="b" onclick="delp('${p.id}','${esc(p.name)}')">Delete</button></div>
+ ${p.llm_url?`<div class="grid"><span>Custom LLM URL</span><span class="url">${esc(p.llm_url)}</span>${copy(p.llm_url)}<span>Server URL</span><span class="url">${esc(p.webhook_url)}</span>${copy(p.webhook_url)}<span>Your webhook</span><input value="${esc(p.forward_url)}" placeholder="Optional. Every Vapi message is sent here at once." onchange="setp('${p.id}',{forward_url:this.value})"><span></span></div>
+ <ol class="small muted"><li>In Vapi, open the assistant. Under Model, choose Custom LLM and paste the Custom LLM URL. Any model name works.</li><li>Under Advanced, paste the Server URL and turn on the End Of Call Report message.</li><li>Make a call. It appears under Calls, with its grade and any model update.</li></ol>`:'<p class="muted">The public address is not ready.</p>'}</div>`).join('')||'<p class="muted">No projects yet.</p>'}
+function renderCalls(){const name=id=>(S.projects.find(p=>p.id===id)||{}).name||'removed';$('cempty').hidden=S.calls.length>0;
+ $('clist').innerHTML=S.calls.map(c=>{const g=c.grade,e=c.edit;return `<tr class="call" onclick="tog('${esc(c.id)}')"><td>${esc(c.time)}</td><td>${esc(name(c.project))}</td><td>${esc(c.status)}</td><td>${g?`<span class="pill ${g.passed?'ok':'no'}">${g.score}/10</span>`:''}</td><td>${e?esc(e.outcome+(e.version?' v'+e.version:'')):(c.update_model_instructions?'requested':'')}</td></tr>`+(open.has(c.id)?`<tr><td colspan="5">${g?`<p>${esc(g.summary)}</p>`:''}${c.error?`<p class="muted">${esc(c.error)}</p>`:''}${c.update_model_instructions?`<p><b>update_model_instructions</b> (turn ${c.update_model_instructions.turn})</p><pre>${esc(c.update_model_instructions.instructions)}\n\nCorrected reply: ${esc(c.update_model_instructions.corrected_reply)}</pre>`:''}${e?`<p><b>Model update:</b> ${esc(e.outcome)}. ${esc(e.reason||'')}</p>${e.new_reply?`<pre>Before: ${esc(e.old_reply)}\n\nAfter: ${esc(e.new_reply)}</pre>`:''}`:''}${c.steps?`<details><summary class="small muted">Editor steps (${c.steps.length})</summary><pre>${esc(c.steps.map(s=>s.tool+' '+JSON.stringify(s.input)+' → '+JSON.stringify(s.output).slice(0,400)).join('\n'))}</pre></details>`:''}${c.transcript?`<details><summary class="small muted">Transcript</summary><pre>${esc(c.transcript)}</pre></details>`:''}</td></tr>`:'')}).join('')}
+function renderModel(){const v=S.versions;$('minfo').textContent=`${S.model.split('/').pop()} is serving version ${S.live_version}. ${S.edits_today} model updates today. ${S.queue} calls waiting to be judged.`;if(document.activeElement!==$('cap'))$('cap').value=S.config.daily_edit_cap;
+ $('vlist').innerHTML=[...v.versions].reverse().map(x=>`<tr><td>v${x.n}${x.n===v.active?' <span class="pill ok">live</span>':''}</td><td>${esc(x.created)}</td><td>${esc(x.instructions)}</td><td>${x.agreement}</td><td>${x.n===v.active?'':`<button class="b" onclick="act(${x.n})">Use</button>`}</td></tr>`).join('')+`<tr><td>Base${v.active===0?' <span class="pill ok">live</span>':''}</td><td></td><td>The original weights</td><td></td><td>${v.active===0?'':'<button class="b" onclick="act(0)">Use</button>'}</td></tr>`}
+async function load(){S=await api('/api/state');$('meta').textContent=`version ${S.live_version}`;renderProjects();renderCalls();renderModel()}
+window.setp=(id,b)=>run(()=>api('/api/projects/'+id,b))();window.delp=(id,n)=>{if(confirm(`Delete ${n}? Its URLs stop working.`))run(()=>api('/api/projects/'+id+'/delete',{}))()};
+window.act=n=>run(()=>api(`/api/versions/${n}/activate`,{}))();window.tog=id=>{open.has(id)?open.delete(id):open.add(id);renderCalls()};
+$('pcreate').onclick=run(async()=>{await api('/api/projects',{name:$('pname').value,forward_url:$('pfwd').value});$('pname').value=$('pfwd').value=''});
+$('capsave').onclick=run(()=>api('/api/config',{daily_edit_cap:+$('cap').value}));
+$('trygo').onclick=async()=>{try{const m=[];if($('trysys').value)m.push({role:'system',content:$('trysys').value});m.push({role:'user',content:$('trymsg').value});$('tryout').hidden=false;$('tryout').textContent='…';$('tryout').textContent=(await api('/api/try',{messages:m})).reply}catch(e){toast(e.message)}};
+load();setInterval(()=>load().catch(()=>{}),4000);
+</script></body></html>
