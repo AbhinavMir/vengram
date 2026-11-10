@@ -23,8 +23,15 @@ def update_call(cid, **kw):
 def edits_today(): return sum(1 for r in calls() if r.get("edit_started", "").startswith(time.strftime("%Y-%m-%d")))
 
 # ---------- public address ----------
-def open_tunnel(port):
-    """Start ngrok for this port and return its public https address."""
+def open_tunnel(port, tries=8):
+    """Start ngrok for this port and return its public https address.
+    After a restart, ngrok can report the old endpoint as online for some seconds, so that case is tried again."""
+    for attempt in range(tries):
+        try: return _open_tunnel(port)
+        except RuntimeError as err:
+            if "ERR_NGROK_334" not in str(err) or attempt == tries - 1: raise SystemExit(f"ngrok failed: {err}")
+            time.sleep(5)
+def _open_tunnel(port):
     exe = shutil.which("ngrok") or "/opt/homebrew/bin/ngrok"
     if not os.path.exists(exe): raise SystemExit("ngrok is not installed. Install it, or pass --public-url.")
     proc = subprocess.Popen([exe, "http", f"127.0.0.1:{port}", "--log=stdout", "--log-format=json", "--inspect=false"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -34,7 +41,7 @@ def open_tunnel(port):
         except json.JSONDecodeError: continue
         if rec.get("url", "").startswith("https://"):
             threading.Thread(target=lambda: [None for _ in proc.stdout], daemon=True).start(); return rec["url"]
-        if rec.get("lvl") in ("eror", "crit"): raise SystemExit(f"ngrok failed: {rec.get('err') or rec.get('msg')}")
+        if rec.get("lvl") in ("eror", "crit"): proc.terminate(); raise RuntimeError(rec.get("err") or rec.get("msg"))
         if time.time() > deadline: break
     raise SystemExit("ngrok did not report a public address.")
 
